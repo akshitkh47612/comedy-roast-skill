@@ -23,6 +23,7 @@ When you ask your coding agent to "roast me," the skill:
 3. **Delivers a full roast monologue** — opener, work roast, code roast, timeline roast, and a backhanded compliment to close
 
 `roast-eval` also drafts more jokes than it delivers, self-filters them against a personal taste profile, and opens a small local review app so you can rate what actually landed.
+<img width="1157" height="808" alt="Three data sources were supposed to feed this roast Cittul, WorldQ, Twitter, All three are cu" src="https://github.com/user-attachments/assets/738edb66-cf8a-490a-985d-993c11ff9c73" />
 
 ## `roast-eval`: a roast that learns your taste
 
@@ -34,6 +35,7 @@ When you ask your coding agent to "roast me," the skill:
 - Nothing is graded on a fixed scale — Pass/Fail only, per the same reasoning product evals use: binary judgments are calibratable, 1-5 scores aren't.
 
 All of your rating history and taste profile stay on your machine (`.agents/skills/roast-eval/data/`, git-ignored) — never committed, never sent anywhere except the LLM calls the skill itself makes.
+<img width="1447" height="478" alt="Pasted Graphic 5" src="https://github.com/user-attachments/assets/1aced2fd-b36f-4302-95fd-aa63392951b9" />
 
 See [`.agents/skills/roast-eval/SKILL.md`](.agents/skills/roast-eval/SKILL.md), [`review-loop.md`](.agents/skills/roast-eval/review-loop.md), and [`calibrate.md`](.agents/skills/roast-eval/calibrate.md) for the full mechanics.
 
