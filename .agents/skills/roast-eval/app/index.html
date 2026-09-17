@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Roast Review</title>
+<style>
+  :root {
+    --bg: #f7f7f8;
+    --card-bg: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6b6b6b;
+    --border: #e2e2e2;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #17181a;
+      --card-bg: #232427;
+      --text: #eaeaea;
+      --muted: #9a9a9a;
+      --border: #35363a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px 80px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .section-group { max-width: 720px; margin: 0 auto 28px; }
+  .section-title {
+    font-size: 13px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.04em; color: var(--muted); margin-bottom: 8px;
+  }
+  .bit {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent, #888);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .bit-text { font-size: 15px; line-height: 1.45; margin-bottom: 8px; }
+  .bit-refs { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .rate-row { display: flex; gap: 6px; align-items: center; }
+  .rate-btn {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .rate-btn.active[data-label="Pass"] { background: #1f8a3d; color: white; border-color: #1f8a3d; }
+  .rate-btn.active[data-label="Fail"] { background: #8a1f1f; color: white; border-color: #8a1f1f; }
+  .rate-btn.active[data-label="TooFar"] { background: #b5760b; color: white; border-color: #b5760b; }
+  .note-input {
+    flex: 1;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    border-radius: 6px;
+    padding: 5px 8px;
+    font-size: 13px;
+    min-width: 0;
+  }
+  .empty { color: var(--muted); font-size: 14px; text-align: center; margin-top: 60px; }
+  .toast {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: var(--card-bg); border: 1px solid var(--border);
+    padding: 8px 16px; border-radius: 20px; font-size: 13px; color: var(--text);
+    opacity: 0; transition: opacity 0.2s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+  <h1>Rate the roast</h1>
+  <div class="sub">👍 Landed · 👎 Bombed · 🚩 Too far — notes autosave, ratings save instantly.</div>
+  <div id="root"><div class="empty">Loading…</div></div>
+  <div class="toast" id="toast"></div>
+
+<script>
+const SECTION_ORDER = ["Opening", "Work", "Code", "Timeline", "CrossRef", "Closer", "Unsorted"];
+const SECTION_COLOR = {
+  Opening: "#5b8def",
+  Work: "#e0763a",
+  Code: "#3aa6a0",
+  Timeline: "#b568d6",
+  CrossRef: "#d64a70",
+  Closer: "#6ab04c",
+  Unsorted: "#888888",
+};
+const POLL_MS = 3000;
+const NOTE_DEBOUNCE_MS = 600;
+
+let bits = [];
+const noteTimers = new Map();
+
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 1200);
+}
+
+async function fetchBits() {
+  try {
+    const res = await fetch("/api/bits");
+    return await res.json();
+  } catch (err) {
+    console.error("failed to fetch bits", err);
+    return null;
+  }
+}
+
+async function postRating(id, label, note) {
+  try {
+    const res = await fetch("/api/ratings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, label, note }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    showToast("Saved");
+  } catch (err) {
+    console.error("failed to save rating", err);
+    showToast("Save failed — retry");
+  }
+}
+
+function groupBySection(list) {
+  const groups = new Map();
+  for (const bit of list) {
+    const key = SECTION_ORDER.includes(bit.section) ? bit.section : "Unsorted";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(bit);
+  }
+  return groups;
+}
+
+function bitCard(bit) {
+  const card = document.createElement("div");
+  card.className = "bit";
+  card.style.setProperty("--accent", SECTION_COLOR[bit.section] || SECTION_COLOR.Unsorted);
+
+  const text = document.createElement("div");
+  text.className = "bit-text";
+  text.textContent = bit.text;
+  card.appendChild(text);
+
+  if (bit.source_refs && bit.source_refs.length) {
+    const refs = document.createElement("div");
+    refs.className = "bit-refs";
+    refs.textContent = bit.source_refs.join(" · ");
+    card.appendChild(refs);
+  }
+
+  const row = document.createElement("div");
+  row.className = "rate-row";
+
+  for (const [label, emoji] of [["Pass", "👍"], ["Fail", "👎"], ["TooFar", "🚩"]]) {
+    const btn = document.createElement("button");
+    btn.className = "rate-btn" + (bit.label === label ? " active" : "");
+    btn.dataset.label = label;
+    btn.textContent = emoji;
+    btn.title = label;
+    btn.onclick = () => {
+      const nextLabel = bit.label === label ? null : label;
+      bit.label = nextLabel;
+      render();
+      postRating(bit.id, nextLabel, bit.note || "");
+    };
+    row.appendChild(btn);
+  }
+
+  const note = document.createElement("input");
+  note.className = "note-input";
+  note.type = "text";
+  note.placeholder = "why? (optional)";
+  note.value = bit.note || "";
+  note.oninput = () => {
+    bit.note = note.value;
+    clearTimeout(noteTimers.get(bit.id));
+    noteTimers.set(
+      bit.id,
+      setTimeout(() => postRating(bit.id, bit.label, bit.note), NOTE_DEBOUNCE_MS)
+    );
+  };
+  row.appendChild(note);
+
+  card.appendChild(row);
+  return card;
+}
+
+function render() {
+  const root = document.getElementById("root");
+  root.innerHTML = "";
+
+  if (!bits.length) {
+    root.innerHTML = '<div class="empty">No jokes yet — waiting for the agent to push some.</div>';
+    return;
+  }
+
+  const groups = groupBySection(bits);
+  for (const section of SECTION_ORDER) {
+    if (!groups.has(section)) continue;
+    const wrap = document.createElement("div");
+    wrap.className = "section-group";
+    const title = document.createElement("div");
+    title.className = "section-title";
+    title.textContent = section;
+    wrap.appendChild(title);
+    for (const bit of groups.get(section)) {
+      wrap.appendChild(bitCard(bit));
+    }
+    root.appendChild(wrap);
+  }
+}
+
+function bitsKey(list) {
+  return JSON.stringify(list.map((b) => [b.id, b.label]));
+}
+
+async function pollLoop() {
+  const fresh = await fetchBits();
+  if (fresh) {
+    // Preserve any in-flight local edits (unsaved note text) by id.
+    const localById = new Map(bits.map((b) => [b.id, b]));
+    const merged = fresh.map((b) => {
+      const local = localById.get(b.id);
+      return local && noteTimers.has(b.id) ? { ...b, note: local.note } : b;
+    });
+    // Only touch the DOM when ids or labels actually changed (e.g. the agent
+    // pushed a new bit, or a rating saved). Re-rendering on every poll tick
+    // would blow away focus and any note text the user is mid-typing.
+    const idsOrLabelsChanged = bitsKey(merged) !== bitsKey(bits);
+    bits = merged;
+    if (idsOrLabelsChanged || !document.getElementById("root").firstElementChild) {
+      render();
+    }
+  }
+  setTimeout(pollLoop, POLL_MS);
+}
+
+pollLoop();
+</script>
+</body>
+</html>
